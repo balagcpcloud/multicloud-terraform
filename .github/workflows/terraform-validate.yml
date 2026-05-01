@@ -1,0 +1,14 @@
+name: terraform-validate
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, test, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - working-directory: envs/${{ matrix.env }}
+        run: terraform init -backend=false && terraform validate

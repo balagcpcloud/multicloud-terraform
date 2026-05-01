@@ -1,0 +1,22 @@
+module "tags" { source="../../modules/shared/tags" environment=var.environment owner=var.owner cost_center=var.cost_center application=var.application }
+module "azure_rg" { source="../../modules/azure/resource-group" name="${var.prefix}-${var.environment}-rg" location=var.azure_location tags=module.tags.tags }
+module "azure_network" { source="../../modules/azure/network" name="${var.prefix}-${var.environment}-vnet" resource_group_name=module.azure_rg.name location=module.azure_rg.location address_space=["10.10.0.0/16"] subnets={ aks={address_prefixes=["10.10.1.0/24"]}, private={address_prefixes=["10.10.2.0/24"]}, data={address_prefixes=["10.10.3.0/24"]} } tags=module.tags.tags }
+module "azure_nsg" { source="../../modules/azure/nsg" name="${var.prefix}-${var.environment}-nsg" resource_group_name=module.azure_rg.name location=module.azure_rg.location tags=module.tags.tags }
+module "azure_keyvault" { source="../../modules/azure/key-vault" name=lower(substr(replace("${var.prefix}${var.environment}kv","-",""),0,24)) resource_group_name=module.azure_rg.name location=module.azure_rg.location tenant_id=var.azure_tenant_id tags=module.tags.tags }
+module "azure_storage" { source="../../modules/azure/storage" name=lower(substr(replace("${var.prefix}${var.environment}stg","-",""),0,24)) resource_group_name=module.azure_rg.name location=module.azure_rg.location tags=module.tags.tags }
+module "azure_aks" { source="../../modules/azure/aks" name="${var.prefix}-${var.environment}-aks" resource_group_name=module.azure_rg.name location=module.azure_rg.location subnet_id=module.azure_network.subnet_ids["aks"] node_count=var.environment=="prod"?3:2 tags=module.tags.tags }
+module "azure_postgres" { source="../../modules/azure/postgres" name="${var.prefix}-${var.environment}-pg" resource_group_name=module.azure_rg.name location=module.azure_rg.location administrator_login="pgadmin" administrator_password=var.postgres_admin_password tags=module.tags.tags }
+module "azure_monitor" { source="../../modules/azure/monitor" name="${var.prefix}-${var.environment}-law" resource_group_name=module.azure_rg.name location=module.azure_rg.location tags=module.tags.tags }
+module "aws_network" { source="../../modules/aws/network" name="${var.prefix}-${var.environment}-vpc" cidr_block="10.20.0.0/16" azs=["${var.aws_region}a","${var.aws_region}b"] public_subnets=["10.20.1.0/24","10.20.2.0/24"] private_subnets=["10.20.11.0/24","10.20.12.0/24"] tags=module.tags.tags }
+module "aws_sg" { source="../../modules/aws/security-group" name="${var.prefix}-${var.environment}-sg" vpc_id=module.aws_network.vpc_id tags=module.tags.tags }
+module "aws_kms" { source="../../modules/aws/kms" alias="${var.prefix}-${var.environment}-kms" tags=module.tags.tags }
+module "aws_s3" { source="../../modules/aws/s3" bucket_name="${var.prefix}-${var.environment}-dr-${var.aws_region}" tags=module.tags.tags }
+module "aws_eks" { source="../../modules/aws/eks" name="${var.prefix}-${var.environment}-eks" subnet_ids=module.aws_network.private_subnet_ids tags=module.tags.tags }
+module "aws_rds" { source="../../modules/aws/rds-postgres" identifier="${var.prefix}-${var.environment}-pg" subnet_ids=module.aws_network.private_subnet_ids security_group_ids=[module.aws_sg.id] username="pgadmin" password=var.postgres_admin_password tags=module.tags.tags }
+module "aws_cloudwatch" { source="../../modules/aws/cloudwatch" name="/multicloud/${var.environment}/platform" tags=module.tags.tags }
+module "gcp_network" { source="../../modules/gcp/network" name="${var.prefix}-${var.environment}-vpc" subnets={ gke={region=var.gcp_region,cidr="10.30.1.0/24"}, data={region=var.gcp_region,cidr="10.30.2.0/24"} } }
+module "gcp_firewall" { source="../../modules/gcp/firewall" name="${var.prefix}-${var.environment}-allow-https" network=module.gcp_network.network_id source_ranges=["10.0.0.0/8"] }
+module "gcp_kms" { source="../../modules/gcp/kms" key_ring="${var.prefix}-${var.environment}-kr" key_name="platform-key" location=var.gcp_region }
+module "gcp_gcs" { source="../../modules/gcp/gcs" bucket_name="${var.prefix}-${var.environment}-gcp-data" location=var.gcp_region labels=module.tags.tags }
+module "gcp_gke" { source="../../modules/gcp/gke" name="${var.prefix}-${var.environment}-gke" location=var.gcp_region network=module.gcp_network.network_id subnetwork=module.gcp_network.subnet_ids["gke"] }
+module "gcp_cloudsql" { source="../../modules/gcp/cloudsql-postgres" name="${var.prefix}-${var.environment}-pg" region=var.gcp_region password=var.postgres_admin_password }
